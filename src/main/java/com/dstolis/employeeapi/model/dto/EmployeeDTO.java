@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.dstolis.employeeapi.model.entity.Employee;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -33,7 +34,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Past;
-
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record EmployeeDTO(
     @Schema(description = "Unique identifier for the employee", accessMode = Schema.AccessMode.READ_ONLY)
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
