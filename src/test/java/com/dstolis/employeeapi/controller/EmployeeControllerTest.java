@@ -5,6 +5,7 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -99,7 +100,7 @@ class EmployeeControllerTest {
             LocalDate.of(1990, 1, 1), List.of("hiking", "swimming")
         );
 
-        var createdEmployee = given().auth().basic("admin", "admin")
+        var id = given().auth().basic("admin", "admin")
             .contentType(ContentType.JSON)
             .body(initialEmployeeDTO)
             .when()
@@ -107,7 +108,9 @@ class EmployeeControllerTest {
             .then()
             .statusCode(200)
             .extract()
-            .as(EmployeeDTO.class);
+            .jsonPath().getUUID("id");
+
+        assertNotNull(id, "Created employee should have a non-null ID");
 
         // Update fields
         var updatedEmployeeDTO = new EmployeeDTO(
@@ -119,7 +122,7 @@ class EmployeeControllerTest {
             .contentType(ContentType.JSON)
             .body(updatedEmployeeDTO)
             .when()
-            .put("/api/employees/" + createdEmployee.id())
+            .put("/api/employees/" + id)
             .then()
             .statusCode(200)
             .body("email", is(updatedEmployeeDTO.email()))
@@ -130,14 +133,12 @@ class EmployeeControllerTest {
 
     @Test
     void testUpdateEmployee_NonExistentEmployee() {
-        // Given
         var nonExistentId = UUID.randomUUID();
         var updatedEmployeeDTO = new EmployeeDTO(
             nonExistentId, "updated@sample.com", "Updated Name",
             LocalDate.of(2000, 1, 1), List.of("reading", "travelling")
         );
 
-        // When & Then
         given().auth().basic("admin", "admin")
             .contentType(ContentType.JSON)
             .body(updatedEmployeeDTO)
@@ -152,7 +153,6 @@ class EmployeeControllerTest {
 
     @Test
     void testUpdateEmployee_DuplicateEmail() {
-        // Given - Create two employees with different emails.
         var initialEmployeeDTO = new EmployeeDTO(
             null, "initial@sample.com", "Initial Name",
             LocalDate.of(1990, 1, 1), List.of("hiking", "reading")
@@ -288,7 +288,6 @@ class EmployeeControllerTest {
             .body("errorId", notNullValue())
             .body("path", is("/api/employees"));
     }
-
 
     static Stream<Arguments> employeeDataProvider() {
         return Stream.of(

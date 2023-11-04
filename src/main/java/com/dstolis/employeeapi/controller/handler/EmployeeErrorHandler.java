@@ -47,4 +47,12 @@ public class EmployeeErrorHandler {
             new ErrorResponseDTO(OffsetDateTime.now(), ex.getMessage(), UUID.randomUUID(), request.getRequestURI());
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponseDTO> handleGenericException(Exception ex,
+        HttpServletRequest request) {
+        var error =
+            new ErrorResponseDTO(OffsetDateTime.now(), ex.getMessage(), UUID.randomUUID(), request.getRequestURI());
+        return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
 }
