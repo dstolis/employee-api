@@ -4,7 +4,6 @@ package com.dstolis.employeeapi.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -18,15 +17,17 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import com.dstolis.employeeapi.model.dto.EmployeeDTO;
-import com.dstolis.employeeapi.model.dto.EmployeeEvent;
 import com.dstolis.employeeapi.model.entity.Employee;
+import com.dstolis.employeeapi.model.entity.OutboxEvent;
 import com.dstolis.employeeapi.repository.EmployeeRepository;
+import com.dstolis.employeeapi.repository.OutboxRepository;
 
 import jakarta.persistence.EntityExistsException;
 import jakarta.persistence.EntityNotFoundException;
@@ -41,9 +42,10 @@ class EmployeeServiceTest {
     private EmployeeRepository employeeRepository;
 
     @Mock
-    private KafkaTemplate<String, EmployeeEvent> kafkaTemplate;
+    OutboxRepository outboxRepository;
 
-    private static final String TOPIC = "employee-events";
+    @Captor
+    private ArgumentCaptor<OutboxEvent> outboxEventCaptor;
 
 
     @Test
@@ -81,12 +83,16 @@ class EmployeeServiceTest {
 
         // When
         var newEmployeeDTO = employeeService.updateEmployee(uuid, updatedEmployeeDTO);
-        var employeeEvent = new EmployeeEvent(newEmployeeDTO.id(), EmployeeEvent.EventType.UPDATED);
 
         // Then
         verify(employeeRepository, times(1)).findById(uuid);
         verify(employeeRepository, times(1)).save(mockEmployee);
-        verify(kafkaTemplate, times(1)).send(TOPIC, employeeEvent);
+        verify(outboxRepository, times(1)).save(outboxEventCaptor.capture());
+
+        OutboxEvent capturedEvent = outboxEventCaptor.getValue();
+        assertEquals("Employee", capturedEvent.getAggregateType());
+        assertEquals("UPDATED", capturedEvent.getEventType());
+        assertEquals(OutboxEvent.Status.PENDING, capturedEvent.getStatus());
 
         assertEmployeeDTO(mockEmployee, newEmployeeDTO);
     }
@@ -100,7 +106,6 @@ class EmployeeServiceTest {
         );
 
         var mockEmployee = createMockEmployee(null);
-        var event = new EmployeeEvent(mockEmployee.getId(), EmployeeEvent.EventType.CREATED);
 
         when(employeeRepository.save(mockEmployee)).thenReturn(mockEmployee);
 
@@ -109,7 +114,12 @@ class EmployeeServiceTest {
 
         // Then
         verify(employeeRepository, times(1)).save(mockEmployee);
-        verify(kafkaTemplate, times(1)).send(TOPIC, event);
+        verify(outboxRepository, times(1)).save(outboxEventCaptor.capture());
+
+        OutboxEvent capturedEvent = outboxEventCaptor.getValue();
+        assertEquals("Employee", capturedEvent.getAggregateType());
+        assertEquals("CREATED", capturedEvent.getEventType());
+        assertEquals(OutboxEvent.Status.PENDING, capturedEvent.getStatus());
 
         assertEmployeeDTO(mockEmployee, createdEmployeeDTO);
     }
@@ -133,7 +143,7 @@ class EmployeeServiceTest {
 
         verify(employeeRepository, times(1)).findByEmail("existing_email@example.com");
         verify(employeeRepository, never()).save(any(Employee.class));
-        verify(kafkaTemplate, never()).send(eq(TOPIC), any(EmployeeEvent.class));
+        verify(outboxRepository, never()).save(any(OutboxEvent.class));
     }
 
     @Test
@@ -165,7 +175,6 @@ class EmployeeServiceTest {
         );
 
         var mockEmployee = createMockEmployee(id);
-        var employeeEvent = new EmployeeEvent(mockEmployee.getId(), EmployeeEvent.EventType.UPDATED);
 
         when(employeeRepository.findById(id)).thenReturn(Optional.empty());
 
@@ -175,7 +184,7 @@ class EmployeeServiceTest {
 
         verify(employeeRepository, times(1)).findById(id);
         verify(employeeRepository, never()).save(any(Employee.class));
-        verify(kafkaTemplate, times(0)).send(TOPIC, employeeEvent);
+        verify(outboxRepository, times(0)).save(any(OutboxEvent.class));
     }
 
     @Test
@@ -197,7 +206,6 @@ class EmployeeServiceTest {
         // Given
         var id = UUID.randomUUID();
         var mockEmployee = createMockEmployee(id);
-        var employeeEvent = new EmployeeEvent(mockEmployee.getId(), EmployeeEvent.EventType.DELETED);
 
         when(employeeRepository.findById(id)).thenReturn(Optional.of(mockEmployee));
 
@@ -207,7 +215,12 @@ class EmployeeServiceTest {
         // Then
         verify(employeeRepository, times(1)).findById(id);
         verify(employeeRepository, times(1)).delete(mockEmployee);
-        verify(kafkaTemplate, times(1)).send(TOPIC, employeeEvent);
+        verify(outboxRepository, times(1)).save(outboxEventCaptor.capture());
+
+        OutboxEvent capturedEvent = outboxEventCaptor.getValue();
+        assertEquals("Employee", capturedEvent.getAggregateType());
+        assertEquals("DELETED", capturedEvent.getEventType());
+        assertEquals(OutboxEvent.Status.PENDING, capturedEvent.getStatus());
     }
 
     @Test
@@ -223,7 +236,7 @@ class EmployeeServiceTest {
 
         verify(employeeRepository, times(1)).findById(uuid);
         verify(employeeRepository, never()).delete(any(Employee.class));
-        verify(kafkaTemplate, never()).send(eq(TOPIC), any(EmployeeEvent.class));
+        verify(outboxRepository, never()).delete(any(OutboxEvent.class));
     }
 
     private Employee createMockEmployee(UUID uuid) {

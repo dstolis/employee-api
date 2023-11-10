@@ -1,16 +1,18 @@
 package com.dstolis.employeeapi.service;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import com.dstolis.employeeapi.model.dto.EmployeeDTO;
 import com.dstolis.employeeapi.model.dto.EmployeeEvent;
 import com.dstolis.employeeapi.model.entity.Employee;
+import com.dstolis.employeeapi.model.entity.OutboxEvent;
 import com.dstolis.employeeapi.repository.EmployeeRepository;
+import com.dstolis.employeeapi.repository.OutboxRepository;
 
 import jakarta.persistence.EntityExistsException;
 import jakarta.persistence.EntityNotFoundException;
@@ -21,26 +23,36 @@ public class EmployeeService {
 
     private final EmployeeRepository employeeRepository;
 
-    private final KafkaTemplate<String, EmployeeEvent> kafkaTemplate;
-
-    private static final String TOPIC = "employee-events";
+    private final OutboxRepository outboxRepository;
 
     @Autowired
-    public EmployeeService(final EmployeeRepository employeeRepository,
-        final KafkaTemplate<String, EmployeeEvent> kafkaTemplate) {
+    public EmployeeService(final EmployeeRepository employeeRepository, final OutboxRepository outboxRepository) {
         this.employeeRepository = employeeRepository;
-        this.kafkaTemplate = kafkaTemplate;
+        this.outboxRepository = outboxRepository;
     }
 
     @Transactional(rollbackOn = Exception.class)
     public EmployeeDTO createEmployee(EmployeeDTO employeeDto) {
+        // Check if employee with the same email already exists
         employeeRepository.findByEmail(employeeDto.email()).ifPresent(employee -> {
             throw new EntityExistsException("Email " + employeeDto.email() + " already exists!");
         });
+
         var employee = new Employee(employeeDto);
         var savedEmployee = employeeRepository.save(employee);
-        kafkaTemplate.send(TOPIC,
-            new EmployeeEvent(savedEmployee.getId(), EmployeeEvent.EventType.CREATED));
+
+
+        var payload = new EmployeeEvent(savedEmployee.getId(), EmployeeEvent.EventType.CREATED).toString();
+        var outboxEvent = new OutboxEvent(
+            savedEmployee.getId(),
+            "Employee",
+            "CREATED",
+            payload,
+            OffsetDateTime.now(),
+            OutboxEvent.Status.PENDING
+        );
+        outboxRepository.save(outboxEvent);
+
         return new EmployeeDTO(savedEmployee);
     }
 
@@ -76,8 +88,16 @@ public class EmployeeService {
 
         var savedEmployee = employeeRepository.save(updatedEmployee);
 
-        kafkaTemplate.send(TOPIC,
-            new EmployeeEvent(savedEmployee.getId(), EmployeeEvent.EventType.UPDATED));
+        var payload = new EmployeeEvent(savedEmployee.getId(), EmployeeEvent.EventType.UPDATED).toString();
+        var outboxEvent = new OutboxEvent(
+            savedEmployee.getId(),
+            "Employee",
+            "UPDATED",
+            payload,
+            OffsetDateTime.now(),
+            OutboxEvent.Status.PENDING
+        );
+        outboxRepository.save(outboxEvent);
 
         return new EmployeeDTO(savedEmployee);
     }
@@ -87,6 +107,15 @@ public class EmployeeService {
         var employee = employeeRepository.findById(id)
             .orElseThrow(() -> new EntityNotFoundException("Employee with ID " + id + " not found."));
         employeeRepository.delete(employee);
-        kafkaTemplate.send(TOPIC, new EmployeeEvent(id, EmployeeEvent.EventType.DELETED));
+        var payload = new EmployeeEvent(id, EmployeeEvent.EventType.DELETED).toString();
+        var outboxEvent = new OutboxEvent(
+            id,
+            "Employee",
+            "DELETED",
+            payload,
+            OffsetDateTime.now(),
+            OutboxEvent.Status.PENDING
+        );
+        outboxRepository.save(outboxEvent);
     }
 }

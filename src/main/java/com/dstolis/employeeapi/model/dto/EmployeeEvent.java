@@ -29,4 +29,12 @@ public record EmployeeEvent (UUID id, EventType type) {
     public enum EventType {
         CREATED, UPDATED, DELETED
     }
+
+    @Override
+    public String toString() {
+        return "{" +
+               "id=" + id +
+               ", type=" + type +
+               '}';
+    }
 }
